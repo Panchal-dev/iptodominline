@@ -3,12 +3,15 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 from sources import get_scrapers
 from console import IPLookupConsole
 from utils import CursorManager
+import threading
 
 class IPLookup:
     def __init__(self):
         self.console = IPLookupConsole()
         self.cursor_manager = CursorManager()
         self.completed = 0
+        self.jobs = {}  # Reference to server.py's jobs dictionary
+        self.jobs_lock = threading.Lock()
 
     def _fetch_from_source(self, source, ip):
         try:
@@ -22,7 +25,7 @@ class IPLookup:
             with open(output_file, "a", encoding="utf-8") as f:
                 f.write("\n".join(sorted(domains)) + "\n")
 
-    def process_ip(self, ip, output_file, scrapers, total):
+    def process_ip(self, ip, output_file, scrapers, total, job_id):
         self.console.print_ip_start(ip)
         self.console.print_progress(self.completed, total)
 
@@ -37,10 +40,12 @@ class IPLookup:
         self._save_domains(domains, output_file)
 
         self.completed += 1
+        with self.jobs_lock:
+            self.jobs[job_id]["progress"] = self.completed
         self.console.print_progress(self.completed, total)
         return domains
 
-    def run(self, ips, output_file):
+    def run(self, ips, output_file, job_id=None):
         if not ips:
             raise ValueError("No valid IPs provided")
         
@@ -56,7 +61,7 @@ class IPLookup:
                 batch_ips = ips[i:i + batch_size]
                 with ThreadPoolExecutor(max_workers=5) as executor:
                     futures = [
-                        executor.submit(self.process_ip, ip, output_file, scrapers, total)
+                        executor.submit(self.process_ip, ip, output_file, scrapers, total, job_id)
                         for ip in batch_ips
                     ]
                     for future in as_completed(futures):
