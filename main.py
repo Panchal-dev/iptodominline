@@ -9,9 +9,11 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 from abc import ABC, abstractmethod
 from bs4 import BeautifulSoup
 from rich.console import Console
-from telegram import Bot
+from telegram import Bot, Update
 from telegram.error import TelegramError
 import urllib3
+from aiohttp import web
+import asyncio
 
 urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 
@@ -252,6 +254,7 @@ class SubFinder:
         self.outputs_dir = "/outputs"
         os.makedirs(self.domains_dir, exist_ok=True)
         os.makedirs(self.outputs_dir, exist_ok=True)
+        self.webhook_set = False
 
     def _fetch_from_source(self, source, domain):
         try:
@@ -301,22 +304,20 @@ class SubFinder:
         self.console.print_progress(self.completed, total)
         return subdomains
 
-    async def fetch_input_files(self):
+    async def fetch_input_files(self, update):
         try:
-            updates = await self.bot.get_updates(limit=100)
             files_fetched = 0
-            for update in updates:
-                if update.message and update.message.document and update.message.chat.id == self.domains_chat_id:
-                    file_name = update.message.document.file_name
-                    if file_name.startswith("domain_part_") and file_name.endswith(".txt"):
-                        file_id = update.message.document.file_id
-                        file_info = await self.bot.get_file(file_id)
-                        file_path = os.path.join(self.domains_dir, file_name)
-                        file_content = requests.get(file_info.file_path).content
-                        with open(file_path, "wb") as f:
-                            f.write(file_content)
-                        self.console.print(f"[green]Downloaded {file_name}[/green]")
-                        files_fetched += 1
+            if update.message and update.message.document and update.message.chat.id == self.domains_chat_id:
+                file_name = update.message.document.file_name
+                if file_name.startswith("domain_part_") and file_name.endswith(".txt"):
+                    file_id = update.message.document.file_id
+                    file_info = await self.bot.get_file(file_id)
+                    file_path = os.path.join(self.domains_dir, file_name)
+                    file_content = requests.get(file_info.file_path).content
+                    with open(file_path, "wb") as f:
+                        f.write(file_content)
+                    self.console.print(f"[green]Downloaded {file_name}[/green]")
+                    files_fetched += 1
             return files_fetched
         except TelegramError as e:
             self.console.print_error(f"Telegram fetch error: {str(e)}")
@@ -334,68 +335,113 @@ class SubFinder:
         except TelegramError as e:
             self.console.print_error(f"Telegram upload error: {str(e)}")
 
-    async def run(self):
+    async def process_file(self):
         sources = get_sources()
-        while True:
-            # Fetch input files
-            files_fetched = await self.fetch_input_files()
-            if files_fetched == 0:
-                self.console.print_error("No new domain files found. Sleeping for 10 minutes.")
-                time.sleep(600)
+        for file_name in sorted(os.listdir(self.domains_dir)):
+            if not file_name.startswith("domain_part_") or not file_name.endswith(".txt"):
                 continue
 
-            # Process each file one at a time
-            for file_name in sorted(os.listdir(self.domains_dir)):
-                if not file_name.startswith("domain_part_") or not file_name.endswith(".txt"):
-                    continue
+            input_file = os.path.join(self.domains_dir, file_name)
+            output_file = os.path.join(self.outputs_dir, file_name.replace(".txt", "_output.txt"))
+            
+            try:
+                with open(input_file, 'r') as f:
+                    domains = [d.strip() for d in f if DomainValidator.is_valid_domain(d.strip())]
+                if not domains:
+                    self.console.print_error(f"No valid domains in {file_name}")
+                    os.remove(input_file)
+                    return False
 
-                input_file = os.path.join(self.domains_dir, file_name)
-                output_file = os.path.join(self.outputs_dir, file_name.replace(".txt", "_output.txt"))
-                
-                try:
-                    with open(input_file, 'r') as f:
-                        domains = [d.strip() for d in f if DomainValidator.is_valid_domain(d.strip())]
-                    if not domains:
-                        self.console.print_error(f"No valid domains in {file_name}")
-                        os.remove(input_file)
-                        continue
+                self.completed = 0
+                all_subdomains = set()
+                total = len(domains)
 
-                    self.completed = 0
-                    all_subdomains = set()
-                    total = len(domains)
+                with self.cursor_manager:
+                    for domain in domains:
+                        subdomains = self.process_domain(domain, output_file, sources, total)
+                        all_subdomains.update(subdomains)
 
-                    with self.cursor_manager:
-                        for domain in domains:
-                            subdomains = self.process_domain(domain, output_file, sources, total)
-                            all_subdomains.update(subdomains)
+                self.console.print_final_summary(output_file)
+                await self.upload_output_file(output_file)
+                os.remove(input_file)  # Remove input file after processing
+                if os.path.exists(output_file):
+                    os.remove(output_file)  # Remove output file after upload
 
-                    self.console.print_final_summary(output_file)
-                    await self.upload_output_file(output_file)
-                    os.remove(input_file)  # Remove input file after processing
-                    if os.path.exists(output_file):
-                        os.remove(output_file)  # Remove output file after upload
+                # Trigger Render restart by returning True
+                self.console.print("[yellow]Restarting service to comply with free tier limits[/yellow]")
+                return True
 
-                    # Trigger Render restart by exiting
-                    self.console.print("[yellow]Restarting service to comply with free tier limits[/yellow]")
-                    return  # Exit to trigger restart
+            except Exception as e:
+                self.console.print_error(f"Error processing {file_name}: {str(e)}")
+                if os.path.exists(input_file):
+                    os.remove(input_file)  # Remove file to avoid reprocessing
+                return False
 
-                except Exception as e:
-                    self.console.print_error(f"Error processing {file_name}: {str(e)}")
-                    if os.path.exists(input_file):
-                        os.remove(input_file)  # Remove file to avoid reprocessing
-                    continue
+        return False
 
-            # If no files left, sleep and check again
-            self.console.print("[yellow]No more files to process. Sleeping for 10 minutes.[/yellow]")
-            time.sleep(600)
+    async def handle_webhook(self, request):
+        try:
+            data = await request.json()
+            update = Update.de_json(data, self.bot)
+            if update:
+                files_fetched = await self.fetch_input_files(update)
+                if files_fetched > 0:
+                    should_restart = await self.process_file()
+                    if should_restart:
+                        return web.Response(status=200)  # Exit to trigger restart
+            return web.Response(status=200)
+        except Exception as e:
+            self.console.print_error(f"Webhook error: {str(e)}")
+            return web.Response(status=500)
+
+    async def setup_webhook(self, webhook_url):
+        if not self.webhook_set:
+            try:
+                await self.bot.set_webhook(url=webhook_url)
+                self.console.print(f"[green]Webhook set to {webhook_url}[/green]")
+                self.webhook_set = True
+            except TelegramError as e:
+                self.console.print_error(f"Failed to set webhook: {str(e)}")
 
 async def main():
     bot_token = "7687952078:AAErW9hkz0p47xGPocEBMSj58PTEDrwyWOk"
-    domains_chat_id = -1002577616617
-    subdomain_chat_id = -1002577616617
+    domains_chat_id = -1002818240346
+    subdomain_chat_id = -4827615311
     subfinder = SubFinder(bot_token, domains_chat_id, subdomain_chat_id)
-    await subfinder.run()
+
+    # Get Render port (defaults to 10000 for free tier)
+    port = int(os.getenv("PORT", 10000))
+    
+    # Construct webhook URL using RENDER_EXTERNAL_HOSTNAME
+    render_hostname = os.getenv("RENDER_EXTERNAL_HOSTNAME")
+    if not render_hostname:
+        subfinder.console.print_error("RENDER_EXTERNAL_HOSTNAME not set. Cannot set webhook.")
+        return
+    
+    webhook_url = f"https://{render_hostname}/webhook"
+    
+    # Set up webhook
+    await subfinder.setup_webhook(webhook_url)
+
+    # Start web server
+    app = web.Application()
+    app.router.add_post('/webhook', subfinder.handle_webhook)
+    
+    # Check for existing files and process them
+    should_restart = await subfinder.process_file()
+    if should_restart:
+        return  # Exit to trigger restart
+
+    # Start the web server
+    runner = web.AppRunner(app)
+    await runner.setup()
+    site = web.TCPSite(runner, '0.0.0.0', port)
+    subfinder.console.print(f"[green]Starting web server on port {port}[/green]")
+    await site.start()
+    
+    # Keep the server running
+    while True:
+        await asyncio.sleep(3600)  # Sleep to keep the event loop alive
 
 if __name__ == "__main__":
-    import asyncio
     asyncio.run(main())

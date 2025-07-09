@@ -6,4 +6,9 @@ services:
     autoDeploy: false
     plan: free
     numInstances: 1
+    envVars:
+      - key: PORT
+        value: 10000
+      - key: RENDER_EXTERNAL_HOSTNAME
+        sync: false  # Render automatically sets this
     healthCheckPath: /

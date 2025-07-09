@@ -6,4 +6,7 @@ COPY requirements.txt .
 
 RUN pip install --no-cache-dir -r requirements.txt
 
+# Expose the port Render assigns (defaults to 10000)
+EXPOSE $PORT
+
 CMD ["python", "main.py"]
