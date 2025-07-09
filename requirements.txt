@@ -1,5 +1,4 @@
 requests==2.31.0
 beautifulsoup4==4.12.3
+python-telegram-bot==20.7
 rich==13.7.1
-python-telegram-bot==21.4
-urllib3==2.2.2
