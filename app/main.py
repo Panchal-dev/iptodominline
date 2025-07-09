@@ -4,7 +4,6 @@ import datetime
 import requests
 import json
 from concurrent.futures import ThreadPoolExecutor, as_completed
-from bugscanx.utils.prompts import get_input
 from .logger import SubFinderConsole
 from .sources import get_sources
 from .utils import DomainValidator, CursorManager
@@ -143,15 +142,17 @@ class SubFinder:
                     self.console.print_final_summary(output_file)
                     await self.upload_output_file(output_file)
                     os.remove(input_file)  # Remove input file after processing
-                    os.remove(output_file)  # Remove output file after upload
+                    if os.path.exists(output_file):
+                        os.remove(output_file)  # Remove output file after upload
 
-                    # Trigger Render restart by exiting (Render will auto-restart)
+                    # Trigger Render restart by exiting
                     self.console.print("[yellow]Restarting service to comply with free tier limits[/yellow]")
                     return  # Exit to trigger restart
 
                 except Exception as e:
                     self.console.print_error(f"Error processing {file_name}: {str(e)}")
-                    os.remove(input_file)  # Remove file to avoid reprocessing
+                    if os.path.exists(input_file):
+                        os.remove(input_file)  # Remove file to avoid reprocessing
                     continue
 
             # If no files left, sleep and check again
