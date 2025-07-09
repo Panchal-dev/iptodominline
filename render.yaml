@@ -1,0 +1,9 @@
+services:
+  - type: web
+    name: subdomain-enum
+    env: docker
+    dockerfilePath: ./Dockerfile
+    autoDeploy: false
+    plan: free
+    numInstances: 1
+    healthCheckPath: /
