@@ -15,7 +15,7 @@ import urllib3
 
 urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 
-# Console (from logger.py)
+# Console
 class SubFinderConsole(Console):
     def __init__(self):
         super().__init__()
@@ -43,7 +43,7 @@ class SubFinderConsole(Console):
     def print_error(self, message):
         self.print(f"[red]{message}[/red]")
 
-# Utils (from utils.py)
+# Utils
 HEADERS = {
     "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8",
     "Accept-Encoding": "gzip, deflate, sdch",
@@ -119,7 +119,7 @@ class CursorManager:
     def __exit__(self, exc_type, exc_val, exc_tb):
         print('\033[?25h', end='', flush=True)
 
-# Sources (from sources.py)
+# Sources
 class SubdomainSource(RequestHandler, ABC):
     def __init__(self, name):
         super().__init__()
@@ -239,7 +239,7 @@ def get_sources():
         # C99Source()
     ]
 
-# SubFinder (from subfinder.py, modified for Telegram)
+# SubFinder
 class SubFinder:
     def __init__(self, bot_token, domains_chat_id, subdomain_chat_id):
         self.console = SubFinderConsole()
@@ -303,10 +303,10 @@ class SubFinder:
 
     async def fetch_input_files(self):
         try:
-            updates = await self.bot.get_updates(chat_id=self.domains_chat_id, limit=100)
+            updates = await self.bot.get_updates(limit=100)
             files_fetched = 0
             for update in updates:
-                if update.message and update.message.document:
+                if update.message and update.message.document and update.message.chat.id == self.domains_chat_id:
                     file_name = update.message.document.file_name
                     if file_name.startswith("domain_part_") and file_name.endswith(".txt"):
                         file_id = update.message.document.file_id
