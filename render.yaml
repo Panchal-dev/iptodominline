@@ -1,0 +1,18 @@
+services:
+  - type: worker
+    name: subdomain-finder
+    env: docker
+    region: oregon
+    buildCommand: docker build -t subdomain-finder .
+    startCommand: python main.py
+    envVars:
+      - key: MONGO_URI
+        fromDatabase:
+          name: subdomain_db
+          property: connectionString
+    autoDeploy: false
+
+databases:
+  - name: subdomain_db
+    databaseName: subdomain_db
+    plan: free

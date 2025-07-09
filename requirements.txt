@@ -1,5 +1,5 @@
-﻿requests
+requests
+pymongo
 beautifulsoup4
+python-dotenv
 rich
-flask
-gunicorn
