@@ -3,9 +3,9 @@ import time
 import datetime
 import requests
 from concurrent.futures import ThreadPoolExecutor, as_completed
-from app.console import SubFinderConsole
-from app.sources import get_sources
-from app.utils import DomainValidator, CursorManager
+from .console import SubFinderConsole
+from .sources import get_sources
+from .utils import DomainValidator, CursorManager
 from telegram import Bot
 from telegram.error import TelegramError
 
@@ -17,8 +17,8 @@ class SubFinder:
         self.bot = Bot(token=bot_token)
         self.domains_chat_id = domains_chat_id
         self.subdomain_chat_id = subdomain_chat_id
-        self.domains_dir = "domains"
-        self.outputs_dir = "outputs"
+        self.domains_dir = "/domains"
+        self.outputs_dir = "/outputs"
         os.makedirs(self.domains_dir, exist_ok=True)
         os.makedirs(self.outputs_dir, exist_ok=True)
 
