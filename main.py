@@ -255,6 +255,7 @@ class SubFinder:
         os.makedirs(self.domains_dir, exist_ok=True)
         os.makedirs(self.outputs_dir, exist_ok=True)
         self.webhook_set = False
+        self.last_update_id = 0
 
     def _fetch_from_source(self, source, domain):
         try:
@@ -304,20 +305,40 @@ class SubFinder:
         self.console.print_progress(self.completed, total)
         return subdomains
 
-    async def fetch_input_files(self, update):
+    async def fetch_input_files(self, update=None):
+        files_fetched = 0
         try:
-            files_fetched = 0
-            if update.message and update.message.document and update.message.chat.id == self.domains_chat_id:
-                file_name = update.message.document.file_name
-                if file_name.startswith("domain_part_") and file_name.endswith(".txt"):
-                    file_id = update.message.document.file_id
-                    file_info = await self.bot.get_file(file_id)
-                    file_path = os.path.join(self.domains_dir, file_name)
-                    file_content = requests.get(file_info.file_path).content
-                    with open(file_path, "wb") as f:
-                        f.write(file_content)
-                    self.console.print(f"[green]Downloaded {file_name}[/green]")
-                    files_fetched += 1
+            if update:
+                # Process single update from webhook
+                if update.message and update.message.document and update.message.chat.id == self.domains_chat_id:
+                    file_name = update.message.document.file_name
+                    if file_name.startswith("domain_part_") and file_name.endswith(".txt"):
+                        file_id = update.message.document.file_id
+                        file_info = await self.bot.get_file(file_id)
+                        file_path = os.path.join(self.domains_dir, file_name)
+                        file_content = requests.get(file_info.file_path).content
+                        with open(file_path, "wb") as f:
+                            f.write(file_content)
+                        self.console.print(f"[green]Downloaded {file_name} via webhook[/green]")
+                        files_fetched += 1
+                        self.last_update_id = max(self.last_update_id, update.update_id)
+            else:
+                # Fallback polling
+                updates = await self.bot.get_updates(offset=self.last_update_id + 1, limit=100)
+                self.console.print(f"[yellow]Polled {len(updates)} updates[/yellow]")
+                for update in updates:
+                    if update.message and update.message.document and update.message.chat.id == self.domains_chat_id:
+                        file_name = update.message.document.file_name
+                        if file_name.startswith("domain_part_") and file_name.endswith(".txt"):
+                            file_id = update.message.document.file_id
+                            file_info = await self.bot.get_file(file_id)
+                            file_path = os.path.join(self.domains_dir, file_name)
+                            file_content = requests.get(file_info.file_path).content
+                            with open(file_path, "wb") as f:
+                                f.write(file_content)
+                            self.console.print(f"[green]Downloaded {file_name} via polling[/green]")
+                            files_fetched += 1
+                            self.last_update_id = max(self.last_update_id, update.update_id)
             return files_fetched
         except TelegramError as e:
             self.console.print_error(f"Telegram fetch error: {str(e)}")
@@ -377,6 +398,7 @@ class SubFinder:
                     os.remove(input_file)  # Remove file to avoid reprocessing
                 return False
 
+        self.console.print("[yellow]No files to process in /domains[/yellow]")
         return False
 
     async def handle_webhook(self, request):
@@ -384,6 +406,7 @@ class SubFinder:
             data = await request.json()
             update = Update.de_json(data, self.bot)
             if update:
+                self.console.print(f"[yellow]Received webhook update: ID {update.update_id}[/yellow]")
                 files_fetched = await self.fetch_input_files(update)
                 if files_fetched > 0:
                     should_restart = await self.process_file()
@@ -397,11 +420,24 @@ class SubFinder:
     async def setup_webhook(self, webhook_url):
         if not self.webhook_set:
             try:
+                await self.bot.delete_webhook(drop_pending_updates=True)
                 await self.bot.set_webhook(url=webhook_url)
                 self.console.print(f"[green]Webhook set to {webhook_url}[/green]")
                 self.webhook_set = True
             except TelegramError as e:
                 self.console.print_error(f"Failed to set webhook: {str(e)}")
+
+    async def run(self):
+        # Fallback polling loop
+        while True:
+            files_fetched = await self.fetch_input_files()
+            if files_fetched > 0:
+                should_restart = await self.process_file()
+                if should_restart:
+                    return
+            else:
+                self.console.print("[yellow]No new files via polling. Sleeping for 10 minutes.[/yellow]")
+                await asyncio.sleep(600)
 
 async def main():
     bot_token = "7687952078:AAErW9hkz0p47xGPocEBMSj58PTEDrwyWOk"
@@ -409,13 +445,14 @@ async def main():
     subdomain_chat_id = -1002818240346
     subfinder = SubFinder(bot_token, domains_chat_id, subdomain_chat_id)
 
-    # Get Render port (defaults to 10000 for free tier)
+    # Get Render port (defaults to 10000)
     port = int(os.getenv("PORT", 10000))
     
-    # Construct webhook URL using RENDER_EXTERNAL_HOSTNAME
+    # Construct webhook URL
     render_hostname = os.getenv("RENDER_EXTERNAL_HOSTNAME")
     if not render_hostname:
-        subfinder.console.print_error("RENDER_EXTERNAL_HOSTNAME not set. Cannot set webhook.")
+        subfinder.console.print_error("RENDER_EXTERNAL_HOSTNAME not set. Falling back to polling.")
+        await subfinder.run()
         return
     
     webhook_url = f"https://{render_hostname}/webhook"
@@ -439,9 +476,12 @@ async def main():
     subfinder.console.print(f"[green]Starting web server on port {port}[/green]")
     await site.start()
     
+    # Run fallback polling in parallel
+    asyncio.create_task(subfinder.run())
+    
     # Keep the server running
     while True:
-        await asyncio.sleep(3600)  # Sleep to keep the event loop alive
+        await asyncio.sleep(3600)
 
 if __name__ == "__main__":
     asyncio.run(main())
