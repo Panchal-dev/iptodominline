@@ -1,6 +1,5 @@
 from rich.console import Console
 
-
 class SubFinderConsole(Console):
     def __init__(self):
         super().__init__()
@@ -20,7 +19,7 @@ class SubFinderConsole(Console):
     def print_final_summary(self, output_file):
         print("\r\033[K", end="")
         self.print(f"\n[green]Total: [bold]{self.total_subdomains}[/bold] subdomains found")
-        self.print(f"[green]Results saved to {output_file}[/green]")
+        self.print(f"[green]Results saved to database[/green]")
 
     def print_progress(self, current, total):
         self.print(f"Progress: {current} / {total}", end="\r")

@@ -1,8 +1,7 @@
 import datetime
 from abc import ABC, abstractmethod
 from bs4 import BeautifulSoup
-from .utils import RequestHandler
-
+from utils import RequestHandler
 
 class SubdomainSource(RequestHandler, ABC):
     def __init__(self, name):
@@ -12,7 +11,6 @@ class SubdomainSource(RequestHandler, ABC):
     @abstractmethod
     def fetch(self, domain):
         pass
-
 
 class CrtshSource(SubdomainSource):
     def __init__(self):
@@ -26,7 +24,6 @@ class CrtshSource(SubdomainSource):
                 subdomains.update(entry['name_value'].splitlines())
         return subdomains
 
-
 class HackertargetSource(SubdomainSource):
     def __init__(self):
         super().__init__("Hackertarget")
@@ -39,7 +36,6 @@ class HackertargetSource(SubdomainSource):
                 [line.split(",")[0] for line in response.text.splitlines()]
             )
         return subdomains
-
 
 class RapidDnsSource(SubdomainSource):
     def __init__(self):
@@ -56,7 +52,6 @@ class RapidDnsSource(SubdomainSource):
                     subdomains.add(text)
         return subdomains
 
-
 class AnubisDbSource(SubdomainSource):
     def __init__(self):
         super().__init__("AnubisDB")
@@ -67,7 +62,6 @@ class AnubisDbSource(SubdomainSource):
         if response:
             subdomains.update(response.json())
         return subdomains
-
 
 class AlienVaultSource(SubdomainSource):
     def __init__(self):
@@ -83,7 +77,6 @@ class AlienVaultSource(SubdomainSource):
                     subdomains.add(hostname)
         return subdomains
 
-
 class CertSpotterSource(SubdomainSource):
     def __init__(self):
         super().__init__("CertSpotter")
@@ -95,7 +88,6 @@ class CertSpotterSource(SubdomainSource):
             for cert in response.json():
                 subdomains.update(cert.get('dns_names', []))
         return subdomains
-
 
 class C99Source(SubdomainSource):
     def __init__(self):
@@ -118,7 +110,6 @@ class C99Source(SubdomainSource):
                 if subdomains:
                     break
         return subdomains
-
 
 def get_sources():
     return [
