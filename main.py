@@ -21,8 +21,8 @@ logger = logging.getLogger(__name__)
 
 # Constants
 BOT_TOKEN = "7687952078:AAErW9hkz0p47xGPocEBMSj58PTEDrwyWOk"
-DOMAINS_CHAT_ID = -1002818240346
-SUBDOMAINS_CHAT_ID = -4827615311
+DOMAINS_CHAT_ID = -1002577616617
+SUBDOMAINS_CHAT_ID = -1002818240346
 HEADERS = {
     "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
     "Accept-Language": "en-US,en;q=0.5",
