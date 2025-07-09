@@ -405,8 +405,8 @@ class SubFinder:
 
 async def main():
     bot_token = "7687952078:AAErW9hkz0p47xGPocEBMSj58PTEDrwyWOk"
-    domains_chat_id = -1002818240346
-    subdomain_chat_id = -4827615311
+    domains_chat_id = -1002577616617
+    subdomain_chat_id = -1002818240346
     subfinder = SubFinder(bot_token, domains_chat_id, subdomain_chat_id)
 
     # Get Render port (defaults to 10000 for free tier)
