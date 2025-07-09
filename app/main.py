@@ -2,11 +2,10 @@ import os
 import time
 import datetime
 import requests
-import json
 from concurrent.futures import ThreadPoolExecutor, as_completed
-from .logger import SubFinderConsole
-from .sources import get_sources
-from .utils import DomainValidator, CursorManager
+from app.console import SubFinderConsole
+from app.sources import get_sources
+from app.utils import DomainValidator, CursorManager
 from telegram import Bot
 from telegram.error import TelegramError
 
