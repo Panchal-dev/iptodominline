@@ -3,17 +3,15 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 from sources import get_scrapers
 from console import IPLookupConsole
 from utils import CursorManager
-import logging
-
-logger = logging.getLogger(__name__)
+import threading
 
 class IPLookup:
-    def __init__(self, jobs, jobs_lock):
+    def __init__(self):
         self.console = IPLookupConsole()
         self.cursor_manager = CursorManager()
         self.completed = 0
-        self.jobs = jobs
-        self.jobs_lock = jobs_lock
+        self.jobs = {}  # Reference to server.py's jobs dictionary
+        self.jobs_lock = threading.Lock()
 
     def _fetch_from_source(self, source, ip):
         try:
@@ -44,8 +42,6 @@ class IPLookup:
         self.completed += 1
         with self.jobs_lock:
             self.jobs[job_id]["progress"] = self.completed
-            from server import save_jobs
-            save_jobs()
         self.console.print_progress(self.completed, total)
         return domains
 

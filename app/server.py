@@ -1,7 +1,6 @@
 ﻿import os
 import uuid
 import threading
-import json
 from flask import Flask, request, jsonify, send_file
 from iplookup import IPLookup
 from utils import process_file, validate_ips
@@ -15,35 +14,8 @@ logger = logging.getLogger(__name__)
 app = Flask(__name__)
 STORAGE_DIR = Path("storage")
 STORAGE_DIR.mkdir(exist_ok=True)
-JOBS_FILE = STORAGE_DIR / "jobs.json"
 jobs = {}  # {job_id: {"status": str, "progress": int, "total": int, "output_file": str}}
-jobs_lock = threading.Lock()
-
-def load_jobs():
-    """Load jobs from JSON file."""
-    global jobs
-    if JOBS_FILE.exists():
-        try:
-            with open(JOBS_FILE, "r") as f:
-                jobs = json.load(f)
-            logger.debug(f"Loaded jobs: {jobs}")
-        except Exception as e:
-            logger.error(f"Failed to load jobs: {str(e)}")
-            jobs = {}
-    return jobs
-
-def save_jobs():
-    """Save jobs to JSON file."""
-    with jobs_lock:
-        try:
-            with open(JOBS_FILE, "w") as f:
-                json.dump(jobs, f)
-            logger.debug("Saved jobs to file")
-        except Exception as e:
-            logger.error(f"Failed to save jobs: {str(e)}")
-
-# Load jobs on startup
-load_jobs()
+jobs_lock = threading.Lock()  # For thread-safe updates
 
 @app.route("/submit", methods=["POST"])
 def submit_job():
@@ -68,27 +40,23 @@ def submit_job():
         
         with jobs_lock:
             jobs[job_id] = {"status": "queued", "progress": 0, "total": len(ips), "output_file": str(output_path)}
-            save_jobs()
         
         logger.info(f"Job {job_id} queued with {len(ips)} IPs")
         
         def run_job():
             try:
-                iplookup = IPLookup(jobs=jobs, jobs_lock=jobs_lock)
+                iplookup = IPLookup()
                 with jobs_lock:
                     jobs[job_id]["status"] = "running"
-                    save_jobs()
                 logger.debug(f"Job {job_id} started")
                 iplookup.run(ips, str(output_path), job_id=job_id)
                 with jobs_lock:
                     jobs[job_id]["status"] = "completed"
-                    save_jobs()
                 logger.info(f"Job {job_id} completed")
             except Exception as e:
                 with jobs_lock:
                     jobs[job_id]["status"] = "failed"
                     jobs[job_id]["error"] = str(e)
-                    save_jobs()
                 logger.error(f"Job {job_id} failed: {str(e)}")
         
         threading.Thread(target=run_job, daemon=True).start()
@@ -140,7 +108,6 @@ def delete_job(job_id):
             Path(output_file).unlink()
         with jobs_lock:
             del jobs[job_id]
-            save_jobs()
         logger.info(f"Job {job_id} deleted")
         return jsonify({"message": "Job deleted"})
     except Exception as e:
